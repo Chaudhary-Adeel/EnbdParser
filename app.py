@@ -204,4 +204,4 @@ def upload_file():
     return render_template_string(UPLOAD_HTML)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(port=8000, debug=True)
