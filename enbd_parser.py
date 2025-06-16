@@ -5,6 +5,42 @@ import re
 from typing import Dict, List, Any
 import os
 
+def categorize(description: str) -> str:
+    """Categorize transaction based on description."""
+    desc = description.lower()
+    if any(x in desc for x in ['restaurant', 'talabat', 'kfc', 'hardees', 'soho garden', 'gazebo', 'tasty pizza', 
+                              'pulao', 'shake', 'cafe', 'noon minutes', 'wakha', 'meraki', 'hot n spicy', 'pak darbar',
+                              'apna kabab', 'mcdonalds', 'carrefour food', 'fillicafe']):
+        return "Food & Dining"
+    if any(x in desc for x in ['taxi', 'careem', 'zo feur', 'dubai taxi', 'emarat', 'epcco', 'enoc', 
+                              'car rental', 'hala']):
+        return "Transport" 
+    if any(x in desc for x in ['noon.com', 'carrefour', 'home centre', 'pakistan supermarket', 'supermarket',
+                              'minutes', 'apple.com', 'itunes', 'openai', 'netflix', 'cursor']):
+        return "Shopping"
+    if any(x in desc for x in ['platiniumlist', 'reel entertainment', 'soho garden', 'expedia', 'leisure',
+                              'mmall', 'smart dubai government']):
+        return "Entertainment"
+    if any(x in desc for x in ['dewa', 'electricity', 'smart dubai', 'etisalat', 'du', 'swyp']):
+        return "Utilities"
+    if any(x in desc for x in ['salon', 'barber', 'dry clean', 'laundry', 'spa']):
+        return "Personal Care"
+    if any(x in desc for x in ['openai', 'netflix', 'whoop', 'cursor', 'apple', 'itunes', 'chatgpt']):
+        return "Subscription/Online"
+    return "Others"
+
+def determine_transaction_type(amount: float, description: str) -> str:
+    """Determine if transaction is income or expense based on amount and description."""
+    desc = description.lower()
+    
+    # For credit card statements: positive amounts are expenses, negative amounts are credits/income
+    if amount > 0:
+        # Positive amounts are typically expenses (charges on credit card)
+        return "Expense"
+    else:
+        # Negative amounts are typically income/credits (payments, refunds, cashbacks)
+        return "Income"
+
 class ENBDStatementParser:
     def __init__(self, pdf_path: str, password: str = None):
         self.pdf_path = pdf_path
@@ -53,11 +89,14 @@ class ENBDStatementParser:
                 if transaction_match:
                     date, description, amount = transaction_match.groups()
                     try:
-                        amount = float(amount.replace(',', ''))
+                        amount_float = float(amount.replace(',', ''))
+                        transaction_type = determine_transaction_type(amount_float, description)
                         transaction = {
                             'date': date,
                             'description': description.strip(),
-                            'amount': amount
+                            'amount': amount_float,
+                            'type': transaction_type,
+                            'category': categorize(description)
                         }
                         self.transactions.append(transaction)
                     except ValueError:
@@ -75,10 +114,29 @@ class ENBDStatementParser:
         # Parse transactions from all pages
         self.parse_transactions(pages)
 
+        # Segregate transactions by type
+        income_transactions = [txn for txn in self.transactions if txn['type'] == 'Income']
+        expense_transactions = [txn for txn in self.transactions if txn['type'] == 'Expense']
+
+        # Calculate financial summary for credit card statement
+        total_income = sum(abs(txn['amount']) for txn in income_transactions)  # Credits/payments (show as positive)
+        total_expense = sum(txn['amount'] for txn in expense_transactions)  # Charges (already positive)
+        net_balance = total_income - total_expense  # Net payment vs charges
+
         # Prepare the final output
         result = {
             'statement_info': self.statement_info,
             'transactions': self.transactions,
+            'summary': {
+                'total_income': round(total_income, 2),
+                'total_expense': round(total_expense, 2),  
+                'net_balance': round(net_balance, 2),
+                'income_count': len(income_transactions),
+                'expense_count': len(expense_transactions),
+                'total_transactions': len(self.transactions)
+            },
+            'income_transactions': income_transactions,
+            'expense_transactions': expense_transactions,
             'metadata': {
                 'parsed_at': datetime.now().isoformat(),
                 'source_file': os.path.basename(self.pdf_path)
